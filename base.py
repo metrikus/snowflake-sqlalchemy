@@ -144,6 +144,76 @@ class SnowflakeIdentifierPreparer(compiler.IdentifierPreparer):
 
 
 class SnowflakeCompiler(compiler.SQLCompiler):
+    def visit_aggregate_order_by(self, element, **kw):
+        """
+        Convert `func.f(aggregate_order_by(value, key))`
+        into `func.f(value, key)`.
+
+        This allows Postgres-compatible `aggregate_order_by`
+        to be used in pre-made Snowflake UDFs.
+
+        Relies on compatible `func.f` being accessible in the schema.
+
+        Example `func.f`:
+        ```
+        CREATE OR REPLACE function
+            first (val FLOAT,
+                    sort_key TIMESTAMP)
+            returns FLOAT
+            language SQL
+        AS
+            $$
+            cast(
+            (array_agg(val) within GROUP (ORDER BY sort_key))[0]
+            AS FLOAT
+            )
+            $$
+        ;
+        CREATE OR REPLACE function
+            last (val FLOAT,
+                    sort_key TIMESTAMP)
+            returns FLOAT
+            language SQL
+        AS
+            $$
+            cast(
+            (array_agg(val) within GROUP (ORDER BY sort_key))[array_size(array_agg(val))-1]
+            AS FLOAT
+            )
+            $$
+        ;
+        CREATE OR REPLACE function
+            first (val VARCHAR,
+                    sort_key TIMESTAMP)
+            returns VARCHAR
+            language SQL
+        AS
+            $$
+            cast(
+            (array_agg(val) within GROUP (ORDER BY sort_key))[0]
+            AS VARCHAR
+            )
+            $$
+        ;
+        CREATE OR REPLACE function
+            last (val VARCHAR,
+                    sort_key TIMESTAMP)
+            returns VARCHAR
+            language SQL
+        AS
+            $$
+            cast(
+            (array_agg(val) within GROUP (ORDER BY sort_key))[array_size(array_agg(val))-1]
+            AS VARCHAR
+            )
+            $$
+        ;
+        ```
+        """
+        return "%s , %s" % (
+            self.process(element.target, **kw),
+            self.process(element.order_by, **kw),
+        )
     def visit_sequence(self, sequence, **kw):
         return (self.dialect.identifier_preparer.format_sequence(sequence) +
                 ".nextval")
